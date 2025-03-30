@@ -6,7 +6,8 @@ import nltk
 import numpy as np
 import pytesseract
 import pdfplumber
-from typing import List, Tuple
+import hashlib
+from typing import List, Tuple, Set
 from pathlib import Path
 from PIL import Image
 from nltk.stem import PorterStemmer
@@ -89,6 +90,18 @@ class SemanticChunker:
             chunks.append(' '.join(sentences[prev:]).strip())
         return [c for c in chunks if c]
 
+def _remove_repeated_phrases(text: str, max_repeats: int = 2) -> str:
+    sentences = sent_tokenize(text)
+    seen_hashes: Set[str] = set()
+    unique_sents = []
+    
+    for sent in sentences:
+        sent_hash = hashlib.md5(sent.encode()).hexdigest()
+        if sum(1 for h in seen_hashes if h == sent_hash) < max_repeats:
+            unique_sents.append(sent)
+            seen_hashes.add(sent_hash)
+    return ' '.join(unique_sents)
+
 def load_documents(file_path: str) -> List[str]:
     try:
         if file_path.endswith('.pdf'):
@@ -121,7 +134,10 @@ def process_scanned_pdf(pdf_path: str) -> str:
         return ''
 
 def preprocess_text(text: str) -> str:
-    text = re.sub(r'\b\d{4}-\d{2,4}\b|\[\d+\]|Figure\s+\d+\.\d+:.*?(\n\n|$)', '', text, flags=re.DOTALL)
+    text = re.sub(r'\b\d{4}-\d{2,4}\b|\[\d+\]|\(SOURCE:\s*.+?\)|\([A-Za-z]+\s*\d{4}\)', '', text)
+    text = re.sub(r'\b(?:Figure|Table|Equation)\s+\d+[.:]', '', text)
+    text = re.sub(r'\n+', ' ', text)
+    text = _remove_repeated_phrases(text)
     return re.sub(r'\s+', ' ', text).strip()
 
 def process_documents(input_dir: str = "./docs", output_dir: str = "./chunks", debug: bool = False) -> List[str]:
